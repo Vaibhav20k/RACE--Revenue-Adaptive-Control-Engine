@@ -22,6 +22,19 @@ app.add_middleware(
 app.include_router(router)
 
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for production container orchestrators and probes."""
+    from datetime import datetime, timezone
+    return {
+        "status": "healthy",
+        "service": "race-control-engine",
+        "version": "0.1.0",
+        "environment": "production",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def get_merchant_console():
     """Serves the minimal, polished RACE Merchant Operations Console."""

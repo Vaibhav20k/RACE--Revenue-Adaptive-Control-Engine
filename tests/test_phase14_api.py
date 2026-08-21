@@ -66,3 +66,15 @@ def test_api_benchmark_endpoint(client):
     assert "baseline_a" in data
     assert "race" in data
     assert data["race"]["incremental_revenue_vs_baseline_a"] > 0.0
+
+
+def test_health_endpoints(client):
+    """Verify /health and /api/v1/health operational probes."""
+    root_health = client.get("/health")
+    assert root_health.status_code == 200
+    assert root_health.json()["status"] == "healthy"
+
+    api_health = client.get("/api/v1/health")
+    assert api_health.status_code == 200
+    assert api_health.json()["status"] == "healthy"
+

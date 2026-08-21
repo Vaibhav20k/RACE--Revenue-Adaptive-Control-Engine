@@ -15,6 +15,18 @@ from evaluation.run_benchmark import run_benchmark_on_split
 
 router = APIRouter(prefix="/api/v1")
 
+
+@router.get("/health")
+def api_health_check() -> Dict[str, Any]:
+    """API health status probe."""
+    return {
+        "status": "healthy",
+        "service": "race-api-v1",
+        "version": "0.1.0",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # Global engine, persistent repository, and memory caches
 _audit_engine = RACEEvaluationEngine()
 _custom_repo = CustomCaseRepository()
