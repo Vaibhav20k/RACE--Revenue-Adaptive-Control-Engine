@@ -1,5 +1,10 @@
 # RACE — Revenue Adaptive Control Engine
 
+[![RACE CI](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-62%20passing-emerald.svg)](tests/)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![License](https://img.shields.io/badge/License-MIT-slate.svg)](LICENSE)
+
 > **Autonomous Closed-Loop Revenue Recovery Decision Engine**  
 > **Track:** Track 03 — AI Revenue Recovery  
 > **Status:** Production-Ready / Fully Validated (62/62 Tests Passing)  
@@ -226,6 +231,40 @@ python -m pytest
 6. Click **+ Add Custom Scenario** to inject a novel failure and watch RACE evaluate it in real time.
 7. Navigate to **`/benchmarks`** for full scientific validation tables and live benchmark execution.
 8. Navigate to **`/about`** for comprehensive architectural documentation and mathematical formulas.
+
+---
+
+## Continuous Integration & Production Deployment
+
+RACE enforces automated verification on every pull request and push to `main` via GitHub Actions (`.github/workflows/ci.yml`).
+
+```mermaid
+flowchart LR
+    A[Git Push / PR] --> B[Static Compilation Check]
+    B --> C[Pytest 62 Test Suite]
+    C --> D[Scientific Benchmark Reproducibility]
+    D --> E[Docker Build & Health Probe Check]
+    E --> F[Production Release Ready]
+```
+
+### 1. Automated CI Pipeline Stages
+* **Static Verification**: `python -m compileall` across all engine modules.
+* **Test Suite Execution**: Full 62-test verification across matrix Python 3.11 & 3.12.
+* **Benchmark Validation**: Executes `evaluation/run_benchmark.py --split validation` to verify zero drift in recovery rates.
+* **Container Health Verification**: Builds the multi-stage `Dockerfile` and executes health probes against `http://localhost:8000/health`.
+
+### 2. Containerized Deployment (Docker & Compose)
+```bash
+# Build and launch production container
+docker compose up --build -d
+
+# Verify container health probe
+curl http://localhost:8000/health
+```
+
+### 3. Production Health Probes
+* **Root Health Check**: `GET /health` — Returns service status, version, and UTC timestamp.
+* **API Health Check**: `GET /api/v1/health` — Returns REST router operational state.
 
 ---
 
