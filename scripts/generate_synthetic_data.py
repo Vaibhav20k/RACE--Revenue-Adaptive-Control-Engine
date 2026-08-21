@@ -1,10 +1,16 @@
 """Deterministic synthetic revenue event and ground-truth generator for RACE."""
 
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import json
 import random
 import uuid
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Tuple, List, Dict, Any
 
 from backend.core.constants import EventType, FailureClass, RecoveryStrategy
@@ -21,21 +27,20 @@ def generate_single_scenario(
     event_id = f"evt_{uuid.UUID(int=rng.getrandbits(128)).hex[:12]}"
     case_id = f"case_{index:04d}"
     
-    # Select scenario archetype
     archetype = rng.choices(
         population=[
-            "network_glitch_upi",        # Highly recoverable immediately or via short retry
-            "insufficient_balance_card",  # Recoverable with reminder then retry or delay
-            "gateway_outage",             # Recoverable only with cooldown / retry later
-            "auth_challenge_sms",         # Recoverable via reminder + customer authorization
-            "checkout_dropoff_cart",      # Cart abandonment, reminder needed
-            "subscription_mandate_fail",  # Recurring failure, needs reminder or scheduled retry
-            "unrecoverable_fraud",        # Fraud suspected, unrecoverable, must STOP
-            "unrecoverable_expired_card", # Permanent card expiry, STOP
-            "customer_opted_out_case",    # Customer opted out, policy must STOP
-            "high_value_ambiguous",       # Amount > 50,000 INR, requires HUMAN_ESCALATION
-            "low_value_uneconomic",       # Amount = 30 INR, ERV <= 0, must STOP
-            "upstream_timeout_failure",   # Gateway timeout execution test case
+            "network_glitch_upi",
+            "insufficient_balance_card",
+            "gateway_outage",
+            "auth_challenge_sms",
+            "checkout_dropoff_cart",
+            "subscription_mandate_fail",
+            "unrecoverable_fraud",
+            "unrecoverable_expired_card",
+            "customer_opted_out_case",
+            "high_value_ambiguous",
+            "low_value_uneconomic",
+            "upstream_timeout_failure",
         ],
         weights=[0.18, 0.16, 0.12, 0.12, 0.10, 0.08, 0.05, 0.05, 0.04, 0.04, 0.03, 0.03],
         k=1,
@@ -43,9 +48,7 @@ def generate_single_scenario(
 
     merchant_id = f"mer_{rng.choice(['retail_prime', 'saas_cloud', 'quick_commerce', 'edtech_plus', 'fintech_hub'])}"
     customer_id = f"cust_{rng.randint(1000, 9999)}"
-    
     timestamp = (base_time + timedelta(minutes=index * 3 + rng.randint(0, 5))).isoformat()
-    
     customer_recovery_rate = round(rng.uniform(0.2, 0.9), 2)
     retry_count = 0
     customer_opted_out = False
@@ -358,7 +361,6 @@ def generate_dataset_split(
         ground_truths.append(gt)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
     events_path = output_dir / f"revenue_events_{split_name}.json"
     gt_path = output_dir / f"ground_truth_{split_name}.json"
 
@@ -368,21 +370,13 @@ def generate_dataset_split(
     with open(gt_path, "w", encoding="utf-8") as f:
         json.dump([g.model_dump() for g in ground_truths], f, indent=2)
 
-    print(f"Generated {count} records in {output_dir} (events: {events_path.name}, ground_truth: {gt_path.name})")
     return events, ground_truths
 
 
 def main():
-    """Generates 1,000 total synthetic cases: 600 train, 200 validation, 200 test."""
     base_path = Path("datasets")
-    
-    # Train: 600 records (seed 42)
     generate_dataset_split(600, seed=42, start_index=1, output_dir=base_path / "train", split_name="train")
-    
-    # Validation: 200 records (seed 43)
     generate_dataset_split(200, seed=43, start_index=601, output_dir=base_path / "validation", split_name="validation")
-    
-    # Test: 200 records (seed 44) - Held out evaluation set
     generate_dataset_split(200, seed=44, start_index=801, output_dir=base_path / "test", split_name="test")
 
 
