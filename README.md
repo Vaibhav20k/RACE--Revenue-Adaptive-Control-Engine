@@ -1,7 +1,7 @@
 # RACE — Revenue Adaptive Control Engine
 
 [![RACE CI](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-62%20passing-emerald.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-63%20passing-emerald.svg)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![License](https://img.shields.io/badge/License-MIT-slate.svg)](LICENSE)
 
