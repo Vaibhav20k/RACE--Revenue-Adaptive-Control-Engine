@@ -10,15 +10,15 @@
     "total_interventions": 200,
     "successful_interventions": 167,
     "unnecessary_interventions": 33,
-    "escalated_cases": 11,
+    "escalated_cases": 9,
     "stopped_cases": 33,
     "execution_failures": 0,
     "duplicate_actions": 0,
     "policy_violations": 0,
     "audit_completeness_pct": 100.0,
-    "total_action_cost": 1783.0,
-    "cost_per_recovered_rupee": 0.0011,
-    "net_recovery_value": 1678569.07
+    "total_action_cost": 1693.0,
+    "cost_per_recovered_rupee": 0.001,
+    "net_recovery_value": 1678659.07
   },
   "Ablation: No Dynamic Routing": {
     "policy_name": "RACE (Revenue Adaptive Control Engine)",
@@ -31,15 +31,15 @@
     "total_interventions": 200,
     "successful_interventions": 167,
     "unnecessary_interventions": 33,
-    "escalated_cases": 11,
+    "escalated_cases": 9,
     "stopped_cases": 33,
     "execution_failures": 0,
     "duplicate_actions": 0,
     "policy_violations": 0,
     "audit_completeness_pct": 100.0,
-    "total_action_cost": 1783.0,
-    "cost_per_recovered_rupee": 0.0011,
-    "net_recovery_value": 1678569.07
+    "total_action_cost": 1693.0,
+    "cost_per_recovered_rupee": 0.001,
+    "net_recovery_value": 1678659.07
   },
   "Ablation: No AI Diagnosis": {
     "policy_name": "RACE (Revenue Adaptive Control Engine)",
@@ -52,15 +52,15 @@
     "total_interventions": 200,
     "successful_interventions": 167,
     "unnecessary_interventions": 33,
-    "escalated_cases": 11,
+    "escalated_cases": 9,
     "stopped_cases": 33,
     "execution_failures": 0,
     "duplicate_actions": 0,
     "policy_violations": 0,
     "audit_completeness_pct": 100.0,
-    "total_action_cost": 1783.0,
-    "cost_per_recovered_rupee": 0.0011,
-    "net_recovery_value": 1678569.07
+    "total_action_cost": 1693.0,
+    "cost_per_recovered_rupee": 0.001,
+    "net_recovery_value": 1678659.07
   },
   "Ablation: No Outcome Learning": {
     "policy_name": "RACE (Revenue Adaptive Control Engine)",

@@ -60,7 +60,6 @@ class RACEEvaluationEngine:
 
         interventions = 0
         total_cost = 0.0
-        audit_records_for_case = 0
 
         # Step 1: Routing & Investigation
         if self.enable_dynamic_routing:
@@ -76,9 +75,10 @@ class RACEEvaluationEngine:
         else:
             RecoveryStateMachine.transition(case, CaseState.DIAGNOSED, reason="Deterministic routing diagnosis")
 
-        # Step 2: Strategy selection via ERV Engine
+        # Step 2: Strategy selection via ERV Engine (using learning store if enabled)
         if self.enable_erv:
-            erv_decision = ERVEngine.evaluate_candidates(event)
+            stats_store_arg = self.learning_engine.stats_store if self.enable_learning else None
+            erv_decision = ERVEngine.evaluate_candidates(event, stats_store=stats_store_arg)
             selected_strat = erv_decision.best_strategy
             selection_reason = erv_decision.decision_rationale
             erv_breakdown = {
@@ -93,7 +93,6 @@ class RACEEvaluationEngine:
                 ],
             }
         else:
-            # Ablated fallback strategy selection
             selected_strat = RecoveryStrategy.RETRY_LATER
             selection_reason = "Ablated ERV: fixed fallback strategy"
             erv_breakdown = None
@@ -111,13 +110,11 @@ class RACEEvaluationEngine:
         case.policy_reason = policy_res.rationale
 
         if not policy_res.is_allowed and not policy_res.requires_human_approval:
-            # Policy blocked (e.g. opt-out or hard unrecoverable)
             RecoveryStateMachine.transition(
                 case,
                 CaseState.STOPPED,
                 reason=f"Policy gate blocked action: {policy_res.rationale}",
             )
-            # Record audit
             audit = AuditRecord(
                 audit_id=f"aud_{uuid.uuid4().hex[:8]}",
                 workflow_id=f"wf_{case.case_id}",
@@ -203,7 +200,6 @@ class RACEEvaluationEngine:
         # Step 4: Approved Execution through Idempotency & Simulator
         RecoveryStateMachine.transition(case, CaseState.POLICY_APPROVED, reason="Policy cleared")
 
-        # Idempotency Lock
         idemp_key = IdempotencyManager.generate_key(
             event.merchant_id,
             event.customer_id,
@@ -234,7 +230,7 @@ class RACEEvaluationEngine:
 
         self.idempotency_mgr.record_completion(idemp_key, request_reference=f"ord_{case.case_id}", result_reference=f"pay_{case.case_id}")
 
-        # Step 5: Closed-Loop Learning
+        # Step 5: Closed-Loop Learning Update
         if self.enable_learning:
             self.learning_engine.update_from_case(case, expected_value=erv_decision.highest_erv if self.enable_erv else rec_amt)
 
@@ -296,7 +292,6 @@ class RACEEvaluationEngine:
         stopped_cases = sum(1 for r in results if r["is_stopped"])
         total_cases = len(events)
 
-        # Unnecessary interventions: action taken on unrecoverable cases (where gt.true_recoverable_amount == 0)
         unnecessary = sum(
             1 for r, gt in zip(results, ground_truths)
             if r["interventions"] > 0 and gt.true_recoverable_amount == 0.0

@@ -1,12 +1,15 @@
 """Expected Recovery Value (ERV) Engine for numerical strategy evaluation and selection."""
 
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from backend.core.constants import RecoveryStrategy
 from backend.core.economics import ERVCalculation
 from backend.domain.events import RevenueEvent
 from backend.recovery.ranking.strategy_scorer import StrategyScorer
 from backend.recovery.ranking.candidate_generator import CandidateStrategyGenerator
+
+if TYPE_CHECKING:
+    from backend.recovery.learning.statistics_store import StrategyStatisticsStore
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,7 @@ class ERVEngine:
         cls,
         event: RevenueEvent,
         candidates: Optional[List[RecoveryStrategy]] = None,
+        stats_store: Optional["StrategyStatisticsStore"] = None,
     ) -> ERVDecision:
         """Calculates ERV for all candidate strategies and selects the highest-value option."""
         if candidates is None:
@@ -47,7 +51,7 @@ class ERVEngine:
                 calculations.append(calc)
                 continue
 
-            p_rec = StrategyScorer.estimate_strategy_probability(event, strat)
+            p_rec = StrategyScorer.estimate_strategy_probability(event, strat, stats_store=stats_store)
             params = StrategyScorer.get_action_parameters(strat, recoverable_base)
 
             calc = ERVCalculation.calculate(
