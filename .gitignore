@@ -60,3 +60,9 @@ htmlcov/
 # Operating System Files
 .DS_Store
 Thumbs.db
+
+# Binaries & Tunneling
+cloudflared.exe
+*.exe
+*.log
+

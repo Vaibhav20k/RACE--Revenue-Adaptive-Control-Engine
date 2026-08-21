@@ -7,8 +7,10 @@
 
 > **Autonomous Closed-Loop Revenue Recovery Decision Engine**  
 > **Track:** Track 03 — AI Revenue Recovery  
-> **Status:** Production-Ready / Fully Validated (62/62 Tests Passing)  
-> **Repository:** [GitHub](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine) | **Console:** `http://127.0.0.1:8000/`
+> **Status:** Production-Ready / Fully Validated (63/63 Tests Passing)  
+> **Repository:** [GitHub](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine)  
+> **Live Public Deployment:** [https://valuation-simon-receives-broad.trycloudflare.com](https://valuation-simon-receives-broad.trycloudflare.com)  
+> **Local Development Console:** `http://127.0.0.1:8000/`
 
 ---
 
@@ -217,10 +219,17 @@ python -m pytest
 
 ---
 
-## Interactive Local Demo Walkthrough
+## Interactive Live Demo Walkthrough
 
-1. Open **`http://127.0.0.1:8000/`** in your browser.
-2. In the dark **TEST A SCENARIO** panel, select `case_0601` (Card Limit Deficit).
+### Try Live Online (No Installation Required):
+Navigate to the deployed public environment:
+* **Live Console**: [https://valuation-simon-receives-broad.trycloudflare.com/](https://valuation-simon-receives-broad.trycloudflare.com/)
+* **Scientific Benchmarks**: [https://valuation-simon-receives-broad.trycloudflare.com/benchmarks](https://valuation-simon-receives-broad.trycloudflare.com/benchmarks)
+* **System Specification**: [https://valuation-simon-receives-broad.trycloudflare.com/about](https://valuation-simon-receives-broad.trycloudflare.com/about)
+
+### Step-by-Step Operator Journey:
+1. Open the **Live Console** in your browser.
+2. In the dark **TEST A SCENARIO** panel, select `case_0601` (Card Limit Deficit) or click **+ Add Custom Scenario** to inject a novel failure event.
 3. The **Payment Incident** card renders center-aligned with the gross amount and failure telemetry.
 4. Click **Investigate Case**:
    - The Payment Incident smoothly transitions to the left.
@@ -228,9 +237,8 @@ python -m pytest
    - The decision centerpiece reveals `REMINDER THEN RETRY` with **INR 901.03 Net ERV**.
    - The 6 deterministic policy invariants verify green checkmarks.
 5. Click **Execute Recovery Action** to dispatch test-mode settlement and observe authoritative gateway verification (`PAID` / `captured`).
-6. Click **+ Add Custom Scenario** to inject a novel failure and watch RACE evaluate it in real time.
-7. Navigate to **`/benchmarks`** for full scientific validation tables and live benchmark execution.
-8. Navigate to **`/about`** for comprehensive architectural documentation and mathematical formulas.
+6. Navigate to **`/benchmarks`** for full scientific validation tables and live benchmark execution.
+7. Navigate to **`/about`** for comprehensive architectural documentation and mathematical formulas.
 
 ---
 
