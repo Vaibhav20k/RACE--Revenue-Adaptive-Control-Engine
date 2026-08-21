@@ -13,7 +13,7 @@ VALID_TRANSITIONS: Dict[CaseState, Set[CaseState]] = {
     CaseState.DIAGNOSED: {CaseState.ACTION_SELECTED, CaseState.STOPPED, CaseState.ESCALATED},
     CaseState.ACTION_SELECTED: {CaseState.POLICY_APPROVED, CaseState.STOPPED, CaseState.ESCALATED},
     CaseState.POLICY_APPROVED: {CaseState.ACTION_EXECUTED, CaseState.EXECUTION_FAILED, CaseState.STOPPED},
-    CaseState.ACTION_EXECUTED: {CaseState.OUTCOME_OBSERVED},
+    CaseState.ACTION_EXECUTED: {CaseState.OUTCOME_OBSERVED, CaseState.EXECUTION_FAILED},
     CaseState.OUTCOME_OBSERVED: {
         CaseState.RECOVERED,
         CaseState.RETRY_ELIGIBLE,
