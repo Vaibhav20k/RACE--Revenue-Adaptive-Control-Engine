@@ -1,7 +1,12 @@
 """Command line runner executing evaluation across all baselines and RACE."""
 
-import json
+import sys
 from pathlib import Path
+
+# Ensure project root is in sys.path when executed standalone
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import json
 from backend.domain.events import RevenueEvent
 from backend.domain.ground_truth import CaseGroundTruth
 from evaluation.baselines.baseline_a_fixed_retry import BaselineAFixedRetry
@@ -69,4 +74,8 @@ def run_benchmark_on_split(split_name: str = "validation"):
 
 
 if __name__ == "__main__":
-    run_benchmark_on_split("validation")
+    import argparse
+    parser = argparse.ArgumentParser(description="Run RACE revenue recovery benchmark evaluation.")
+    parser.add_argument("--split", type=str, default="validation", choices=["validation", "test", "train"], help="Dataset split to evaluate")
+    args = parser.parse_args()
+    run_benchmark_on_split(args.split)

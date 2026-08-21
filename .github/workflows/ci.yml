@@ -1,0 +1,71 @@
+name: RACE Continuous Integration & Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-and-test:
+    name: Lint, Test & Benchmark Validation
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[dev]
+
+      - name: Static Code Compilation Check
+        run: |
+          python -m compileall backend evaluation integrations
+
+      - name: Run Test Suite (62 Automated Verification Tests)
+        run: |
+          pytest -v
+
+      - name: Verify Scientific Benchmark Reproducibility
+        run: |
+          python evaluation/run_benchmark.py --split validation
+
+  docker-build:
+    name: Container Build & Health Validation
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Production Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: race-engine:latest
+          load: true
+
+      - name: Verify Container Execution & Health Endpoint
+        run: |
+          docker run -d --name test-race -p 8000:8000 race-engine:latest
+          sleep 5
+          curl --fail --retry 5 --retry-delay 2 http://localhost:8000/health || exit 1
+          curl --fail --retry 5 --retry-delay 2 http://localhost:8000/api/v1/health || exit 1
+          docker stop test-race
