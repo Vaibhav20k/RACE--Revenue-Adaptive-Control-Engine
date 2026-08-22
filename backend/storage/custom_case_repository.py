@@ -30,7 +30,7 @@ class CustomCaseRepository:
         return conn
 
     def _init_db(self) -> None:
-        """Initializes custom_cases table if it does not already exist."""
+        """Initializes tables for custom cases, webhook deduplication, and persistent learning stats."""
         with self._get_connection() as conn:
             conn.execute(
                 """
@@ -65,7 +65,74 @@ class CustomCaseRepository:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS processed_webhooks (
+                    webhook_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    case_id TEXT,
+                    received_at TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS strategy_learning_stats (
+                    failure_class TEXT NOT NULL,
+                    strategy TEXT NOT NULL,
+                    sample_count INTEGER DEFAULT 0,
+                    success_count INTEGER DEFAULT 0,
+                    total_recovered_amount REAL DEFAULT 0.0,
+                    total_expected_value REAL DEFAULT 0.0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (failure_class, strategy)
+                )
+                """
+            )
             conn.commit()
+
+    def record_processed_webhook(self, webhook_id: str, event_type: str, case_id: Optional[str], payload: Dict[str, Any]) -> None:
+        """Records a processed webhook event to ensure idempotency."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO processed_webhooks (webhook_id, event_type, case_id, received_at, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (webhook_id, event_type, case_id, now, json.dumps(payload)),
+            )
+            conn.commit()
+
+    def is_webhook_processed(self, webhook_id: str) -> bool:
+        """Checks if a webhook event has already been processed."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM processed_webhooks WHERE webhook_id = ?",
+                (webhook_id,),
+            ).fetchone()
+            return row is not None
+
+    def save_learning_bucket(self, failure_class: str, strategy: str, sample_count: int, success_count: int, total_recovered: float, total_expected: float) -> None:
+        """Persists aggregate Bayesian learning stats for a failure class / strategy pair."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO strategy_learning_stats
+                (failure_class, strategy, sample_count, success_count, total_recovered_amount, total_expected_value, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (failure_class.upper(), strategy.upper(), sample_count, success_count, total_recovered, total_expected, now),
+            )
+            conn.commit()
+
+    def load_all_learning_buckets(self) -> List[Dict[str, Any]]:
+        """Loads all persisted strategy learning statistics."""
+        with self._get_connection() as conn:
+            rows = conn.execute("SELECT * FROM strategy_learning_stats").fetchall()
+            return [dict(r) for r in rows]
 
     def get_next_case_id(self) -> str:
         """Generates the next sequential persistent ID (e.g. RACE-CUSTOM-0001)."""

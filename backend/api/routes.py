@@ -1,15 +1,26 @@
 """REST API endpoints for RACE Merchant Operations Console."""
 
+import os
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from dotenv import load_dotenv
+from fastapi import APIRouter, HTTPException, Query, Request, Header
 from pydantic import BaseModel, Field
-from backend.core.constants import EventType, FailureClass
+
+# Load environment variables from .env
+load_dotenv()
+
+from backend.core.constants import EventType, FailureClass, RecoveryStrategy, PolicyDecision, CaseState
 from backend.domain.events import RevenueEvent
 from backend.domain.ground_truth import CaseGroundTruth
+from backend.audit.models import AuditRecord
 from backend.storage.custom_case_repository import CustomCaseRepository, build_custom_ground_truth
+from backend.recovery.state_machine.states import RecoveryCase
+from backend.recovery.execution.executor import BoundedRecoveryExecutor
+from backend.recovery.verification.verifier import RecoveryOutcomeVerifier
+from integrations.razorpay import RazorpayTestClient, RazorpayWebhookHandler
 from evaluation.engine import RACEEvaluationEngine
 from evaluation.run_benchmark import run_benchmark_on_split
 
@@ -28,12 +39,33 @@ def api_health_check() -> Dict[str, Any]:
 
 
 # Global engine, persistent repository, and memory caches
-_audit_engine = RACEEvaluationEngine()
 _custom_repo = CustomCaseRepository()
+_razorpay_client = RazorpayTestClient()
+_webhook_handler = RazorpayWebhookHandler()
+_executor = BoundedRecoveryExecutor(razorpay_client=_razorpay_client)
+_verifier = RecoveryOutcomeVerifier(razorpay_client=_razorpay_client)
+
+_audit_engine = RACEEvaluationEngine()
+# Wire repository into learning engine stats store for automatic SQLite persistence
+_audit_engine.learning_engine.stats_store.repository = _custom_repo
+_audit_engine.learning_engine.stats_store._rehydrate_from_db()
+
 _cached_cases: Dict[str, Dict[str, Any]] = {}
 _cached_events: Dict[str, RevenueEvent] = {}
 _cached_gt: Dict[str, CaseGroundTruth] = {}
 _case_sources: Dict[str, str] = {}
+
+
+@router.get("/config/environment")
+def get_environment_config() -> Dict[str, Any]:
+    """Returns runtime environment mode and non-sensitive configuration."""
+    return {
+        "mode": _razorpay_client.integration_mode,
+        "key_id_prefix": _razorpay_client.key_id_prefix,
+        "webhook_configured": bool(_webhook_handler.secret),
+        "is_mock": _razorpay_client.use_mock_adapter,
+        "environment": os.getenv("ENVIRONMENT", "development"),
+    }
 
 
 class CustomCaseCreateRequest(BaseModel):
@@ -82,17 +114,33 @@ def _initialize_cases():
         _cached_events[case_id] = evt
         _cached_gt[case_id] = gt
         _case_sources[case_id] = "CUSTOM"
-        _cached_cases[case_id] = {
-            "case_id": case_id,
-            "final_state": c["current_state"],
-            "recovered_amount": c["recovered_amount"],
-            "interventions": 1,
-            "total_cost": 8.0,
-            "is_recovered": c["is_recovered"],
-            "is_escalated": c["is_escalated"],
-            "is_stopped": c["is_stopped"],
-            "audit_complete": True,
-        }
+
+        # Rehydrate audit trail into in-memory audit ledger if present
+        audit_dicts = c.get("audit_trail") or []
+        for a_dict in audit_dicts:
+            try:
+                _audit_engine.audit_ledger.record_entry(AuditRecord.model_validate(a_dict))
+            except Exception:
+                pass
+
+        records = _audit_engine.audit_ledger.get_records_for_case(case_id)
+        if not records:
+            res = _audit_engine.process_case(evt, gt)
+            _cached_cases[case_id] = res
+        else:
+            latest_audit = records[-1]
+            _cached_cases[case_id] = {
+                "case_id": case_id,
+                "final_state": c["current_state"],
+                "selected_strategy": latest_audit.selected_action if latest_audit else c.get("selected_strategy"),
+                "recovered_amount": c["recovered_amount"],
+                "interventions": 1,
+                "total_cost": 8.0,
+                "is_recovered": c["is_recovered"],
+                "is_escalated": c["is_escalated"],
+                "is_stopped": c["is_stopped"],
+                "audit_complete": True,
+            }
 
 
 _initialize_cases()
@@ -171,7 +219,7 @@ def list_cases(
             "failure_reason": evt.failure_reason,
             "failure_class": evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class),
             "current_state": c["final_state"],
-            "selected_strategy": latest_audit.selected_action if latest_audit else (c.get("selected_strategy") or "N/A"),
+            "selected_strategy": latest_audit.selected_action if latest_audit else (c.get("selected_strategy") or "NOT INVESTIGATED"),
             "recovered_amount": c["recovered_amount"],
             "is_recovered": c["is_recovered"],
             "is_escalated": c["is_escalated"],
@@ -227,13 +275,13 @@ def create_custom_case(req: CustomCaseCreateRequest) -> Dict[str, Any]:
 
     gt = build_custom_ground_truth(evt, case_id=case_id)
 
-    # Process through the exact same RACE closed-loop evaluation engine
+    # Process through pipeline
     res = _audit_engine.process_case(evt, gt)
 
     records = _audit_engine.audit_ledger.get_records_for_case(case_id)
     latest_audit = records[-1] if records else None
 
-    # Persist in SQLite database
+    # Persist in SQLite
     _custom_repo.save_case(
         event=evt,
         ground_truth=gt,
@@ -256,13 +304,13 @@ def create_custom_case(req: CustomCaseCreateRequest) -> Dict[str, Any]:
         "currency": evt.currency,
         "failure_class": evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class),
         "failure_reason": evt.failure_reason,
-        "selected_strategy": latest_audit.selected_action if latest_audit else "N/A",
+        "selected_strategy": latest_audit.selected_action if latest_audit else res.get("selected_strategy", "NOT INVESTIGATED"),
         "erv": latest_audit.erv_breakdown.get("highest_erv", 0.0) if (latest_audit and latest_audit.erv_breakdown) else 0.0,
         "policy_decision": latest_audit.policy_decision if latest_audit else "N/A",
         "is_recovered": res["is_recovered"],
         "is_escalated": res["is_escalated"],
         "is_stopped": res["is_stopped"],
-        "explanation": _audit_engine.audit_ledger.generate_human_explanation(latest_audit) if latest_audit else "N/A",
+        "explanation": _audit_engine.audit_ledger.generate_human_explanation(latest_audit) if latest_audit else "Evaluated by RACE decision engine.",
     }
 
 
@@ -281,6 +329,7 @@ def get_case_detail(case_id: str) -> Dict[str, Any]:
             _cached_cases[case_id] = {
                 "case_id": case_id,
                 "final_state": db_case["current_state"],
+                "selected_strategy": db_case.get("selected_strategy"),
                 "recovered_amount": db_case["recovered_amount"],
                 "interventions": 1,
                 "total_cost": 8.0,
@@ -295,6 +344,16 @@ def get_case_detail(case_id: str) -> Dict[str, Any]:
     evt = _cached_events[case_id]
     c_res = _cached_cases[case_id]
     records = _audit_engine.audit_ledger.get_records_for_case(case_id)
+    if not records and case_id in _cached_gt:
+        c_res = _audit_engine.process_case(evt, _cached_gt[case_id])
+        _cached_cases[case_id] = c_res
+        records = _audit_engine.audit_ledger.get_records_for_case(case_id)
+
+    latest_rec = records[-1] if records else None
+    explanation = _audit_engine.audit_ledger.generate_human_explanation(latest_rec) if latest_rec else (
+        f"Case {case_id}: Revenue at risk of INR {evt.amount:.2f} due to {evt.failure_class} ({evt.failure_reason}). "
+        f"Evaluated with ERV optimization and deterministic policy gates."
+    )
 
     return {
         "case_id": case_id,
@@ -302,13 +361,13 @@ def get_case_detail(case_id: str) -> Dict[str, Any]:
         "event": evt.model_dump(),
         "summary": c_res,
         "audit_trail": [r.model_dump() for r in records],
-        "explanation": _audit_engine.audit_ledger.generate_human_explanation(records[-1]) if records else "N/A",
+        "explanation": explanation,
     }
 
 
 @router.post("/cases/{case_id}/execute")
 def execute_case_recovery(case_id: str) -> Dict[str, Any]:
-    """Executes bounded recovery action for a specific case and returns verified outcome."""
+    """Executes policy-approved recovery action through Razorpay and verifies authoritative outcome."""
     if case_id not in _cached_events:
         # Check SQLite
         db_case = _custom_repo.get_case(case_id)
@@ -322,63 +381,342 @@ def execute_case_recovery(case_id: str) -> Dict[str, Any]:
     evt = _cached_events[case_id]
     gt = _cached_gt[case_id]
 
-    try:
-        res = _audit_engine.process_case(evt, gt)
-        _cached_cases[case_id] = res
-    except Exception:
-        # Idempotent replay: return cached verified result
-        res = _cached_cases.get(case_id, {
-            "case_id": case_id,
-            "final_state": "RECOVERED",
-            "recovered_amount": evt.amount,
-            "interventions": 1,
-            "is_recovered": True,
-            "is_escalated": False,
-            "is_stopped": False,
-        })
-
     records = _audit_engine.audit_ledger.get_records_for_case(case_id)
     latest_audit = records[-1] if records else None
 
-    # Update SQLite if custom case
+    # Step 1: Check recommended strategy, policy decision, and existing state
+    strat_str = latest_audit.selected_action if latest_audit else "STOP"
+    policy_dec = latest_audit.policy_decision if latest_audit else "APPROVED"
+    current_case_state = _cached_cases.get(case_id, {}).get("final_state", "AT_RISK")
+
+    if strat_str == "STOP" or policy_dec == "BLOCKED" or evt.customer_opted_out or current_case_state == "STOPPED":
+        # Hard-block execution: STOP is a non-intervention decision
+        _cached_cases[case_id] = {
+            "case_id": case_id,
+            "final_state": "STOPPED",
+            "recovered_amount": 0.0,
+            "interventions": 0,
+            "total_cost": 0.0,
+            "is_recovered": False,
+            "is_escalated": False,
+            "is_stopped": True,
+            "audit_complete": True,
+            "selected_strategy": "STOP",
+        }
+
+        # Update SQLite if custom case
+        if _case_sources.get(case_id) == "CUSTOM":
+            _custom_repo.update_case_outcome(
+                case_id=case_id,
+                final_state="STOPPED",
+                recovered_amount=0.0,
+                is_recovered=False,
+                is_escalated=False,
+                is_stopped=True,
+                selected_strategy="STOP",
+                audit_trail=[r.model_dump() for r in records],
+            )
+
+        fc = evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class)
+        return {
+            "case_id": case_id,
+            "source": _case_sources.get(case_id, "BENCHMARK"),
+            "action": "STOP",
+            "executed": False,
+            "integration_mode": _razorpay_client.integration_mode,
+            "status": "STOPPED",
+            "final_state": "STOPPED",
+            "pre_action_outstanding": evt.amount,
+            "post_action_captured": 0.0,
+            "is_recovered": False,
+            "is_escalated": False,
+            "is_stopped": True,
+            "reference_id": None,
+            "idempotency_key": "N/A",
+            "authoritative_payment_status": "unpaid",
+            "reason": "Execution prohibited because selected strategy is STOP (no recovery action authorized).",
+            "explanation": "Action terminated by deterministic policy gate (STOP). No recovery action executed.",
+            "learning_update": {
+                "failure_class": fc,
+                "strategy": "STOP",
+                "empirical_success_rate": 0.0,
+                "message": "Closed-loop learning not updated: STOP is a non-intervention decision.",
+            },
+        }
+
+    if strat_str == "HUMAN_ESCALATION" or policy_dec == "ESCALATE_REQUIRED" or evt.amount > 50000.0 or current_case_state == "ESCALATED":
+        _cached_cases[case_id] = {
+            "case_id": case_id,
+            "final_state": "ESCALATED",
+            "recovered_amount": 0.0,
+            "interventions": 0,
+            "total_cost": 50.0,
+            "is_recovered": False,
+            "is_escalated": True,
+            "is_stopped": False,
+            "audit_complete": True,
+            "selected_strategy": "HUMAN_ESCALATION",
+        }
+        return {
+            "case_id": case_id,
+            "source": _case_sources.get(case_id, "BENCHMARK"),
+            "action": "HUMAN_ESCALATION",
+            "executed": False,
+            "integration_mode": _razorpay_client.integration_mode,
+            "status": "ESCALATED",
+            "final_state": "ESCALATED",
+            "pre_action_outstanding": evt.amount,
+            "post_action_captured": 0.0,
+            "is_recovered": False,
+            "is_escalated": True,
+            "is_stopped": False,
+            "reference_id": f"esc_{case_id}",
+            "idempotency_key": latest_audit.idempotency_key if latest_audit else "N/A",
+            "authoritative_payment_status": "pending_manual_review",
+            "reason": "Execution deferred: Case requires human approval.",
+            "explanation": f"Transaction of INR {evt.amount:.2f} escalated to merchant operations.",
+            "learning_update": {
+                "failure_class": evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class),
+                "strategy": "HUMAN_ESCALATION",
+                "empirical_success_rate": 0.0,
+                "message": "Closed-loop learning deferred pending manual human review.",
+            },
+        }
+
+    # Step 2: Policy Approved Execution through Razorpay Test Client
+    strategy_enum = RecoveryStrategy(strat_str) if strat_str in RecoveryStrategy._value2member_map_ else RecoveryStrategy.RETRY_NOW
+    case_obj = RecoveryCase(
+        case_id=case_id,
+        event_id=evt.event_id,
+        merchant_id=evt.merchant_id,
+        customer_id=evt.customer_id,
+        amount=evt.amount,
+        currency=evt.currency,
+        failure_reason=evt.failure_reason,
+        failure_class=evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class),
+        selected_strategy=strategy_enum,
+        current_state=CaseState.ACTION_SELECTED,
+    )
+    from backend.recovery.state_machine.machine import RecoveryStateMachine
+    RecoveryStateMachine.transition(case_obj, CaseState.POLICY_APPROVED, reason="Policy approved for execution")
+
+    exec_result = _executor.execute(evt, case_obj, strategy_enum)
+
+    # Step 3: Authoritative Outcome Verification
+    if exec_result.success:
+        sim_status = "RECOVERED" if (gt.true_recoverable_amount > 0 and not evt.customer_opted_out) else "FAILED"
+        sim_amt = evt.amount if sim_status == "RECOVERED" else 0.0
+        
+        verif_result = _verifier.verify_payment_outcome(
+            case_obj,
+            payment_id=exec_result.reference_id,
+            simulated_status=sim_status,
+            simulated_amount=sim_amt,
+        )
+        is_rec = verif_result.is_fully_recovered
+        rec_amt = verif_result.verified_amount_recovered
+        final_state = verif_result.verified_state
+    else:
+        is_rec = False
+        rec_amt = 0.0
+        final_state = "EXECUTION_FAILED"
+
+    _cached_cases[case_id] = {
+        "case_id": case_id,
+        "final_state": final_state,
+        "recovered_amount": rec_amt,
+        "interventions": 1,
+        "total_cost": 8.0 if strategy_enum == RecoveryStrategy.REMINDER_THEN_RETRY else 5.0,
+        "is_recovered": is_rec,
+        "is_escalated": False,
+        "is_stopped": not is_rec,
+        "audit_complete": True,
+        "selected_strategy": strat_str,
+    }
+
+    # Step 4: Closed-Loop Bayesian Learning Update (only after authoritative outcome)
+    fc = evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class)
+    _audit_engine.learning_engine.stats_store.record_outcome(
+        failure_class=fc,
+        strategy=strat_str,
+        expected_value=rec_amt if is_rec else 0.0,
+        actual_recovered_amount=rec_amt,
+        is_success=is_rec,
+    )
+    updated_rate = _audit_engine.learning_engine.stats_store.get_empirical_rate(fc, strat_str, default=0.5)
+
+    # Step 5: Append Audit Entry
+    audit_entry = AuditRecord(
+        audit_id=f"aud_exec_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+        workflow_id=f"wf_{case_id}",
+        case_id=case_id,
+        event_id=evt.event_id,
+        merchant_id=evt.merchant_id,
+        customer_id=evt.customer_id,
+        revenue_at_risk=evt.amount,
+        estimated_recoverable_amount=rec_amt,
+        failure_reason=evt.failure_reason,
+        failure_class=fc,
+        selected_action=strat_str,
+        selection_reason=f"Executed via Razorpay {_razorpay_client.integration_mode}: ref={exec_result.reference_id}",
+        policy_checks=["PASSED"],
+        policy_decision="APPROVED",
+        action_status=exec_result.status_code,
+        idempotency_key=f"idemp_{case_id}_{strat_str}",
+        outcome=final_state,
+        recovered_amount=rec_amt,
+        from_state="ACTION_SELECTED",
+        to_state=final_state,
+    )
+    _audit_engine.audit_ledger.record_entry(audit_entry)
+
+    # Persist in SQLite if custom case
     if _case_sources.get(case_id) == "CUSTOM":
         _custom_repo.update_case_outcome(
             case_id=case_id,
-            final_state=res["final_state"],
-            recovered_amount=res["recovered_amount"],
-            is_recovered=res["is_recovered"],
-            is_escalated=res["is_escalated"],
-            is_stopped=res["is_stopped"],
-            selected_strategy=latest_audit.selected_action if latest_audit else "STOP",
-            audit_trail=[r.model_dump() for r in records],
+            final_state=final_state,
+            recovered_amount=rec_amt,
+            is_recovered=is_rec,
+            is_escalated=False,
+            is_stopped=not is_rec,
+            selected_strategy=strat_str,
+            audit_trail=[r.model_dump() for r in _audit_engine.audit_ledger.get_records_for_case(case_id)],
         )
-
-    # Empirical rate for closed-loop learning display
-    fc = evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class)
-    strat = latest_audit.selected_action if latest_audit else "STOP"
-    updated_rate = _audit_engine.learning_engine.stats_store.get_empirical_rate(fc, strat, default=0.5)
 
     return {
         "case_id": case_id,
         "source": _case_sources.get(case_id, "BENCHMARK"),
-        "action": strat,
-        "status": "APPROVED_AND_EXECUTED" if res["is_recovered"] else ("ESCALATED" if res["is_escalated"] else "POLICY_BLOCKED_OR_STOPPED"),
-        "final_state": res["final_state"],
+        "action": strat_str,
+        "integration_mode": _razorpay_client.integration_mode,
+        "reference_id": exec_result.reference_id,
+        "status": "APPROVED_AND_EXECUTED" if is_rec else "EXECUTION_ATTEMPT_FAILED",
+        "final_state": final_state,
         "pre_action_outstanding": evt.amount,
-        "post_action_captured": res["recovered_amount"],
-        "is_recovered": res["is_recovered"],
-        "is_escalated": res["is_escalated"],
-        "is_stopped": res["is_stopped"],
-        "idempotency_key": latest_audit.idempotency_key if latest_audit else "N/A",
-        "authoritative_payment_status": "captured" if res["is_recovered"] else "unpaid",
+        "post_action_captured": rec_amt,
+        "is_recovered": is_rec,
+        "is_escalated": False,
+        "is_stopped": not is_rec,
+        "idempotency_key": f"idemp_{case_id}_{strat_str}",
+        "authoritative_payment_status": "captured" if is_rec else "failed",
         "learning_update": {
             "failure_class": fc,
-            "strategy": strat,
+            "strategy": strat_str,
             "empirical_success_rate": updated_rate,
-            "message": f"Updated recovery statistics for ({fc}, {strat}). Empirical success rate: {updated_rate * 100:.1f}%",
+            "message": f"Updated recovery statistics for ({fc}, {strat_str}) in mode {_razorpay_client.integration_mode}. Empirical success rate: {updated_rate * 100:.1f}%",
         },
-        "audit_record": latest_audit.model_dump() if latest_audit else None,
-        "explanation": _audit_engine.audit_ledger.generate_human_explanation(latest_audit) if latest_audit else "N/A",
+        "audit_record": audit_entry.model_dump(),
+        "explanation": _audit_engine.audit_ledger.generate_human_explanation(audit_entry),
+    }
+
+
+@router.post("/webhooks/razorpay")
+async def handle_razorpay_webhook(
+    request: Request,
+    x_razorpay_signature: Optional[str] = Header(None, alias="X-Razorpay-Signature"),
+) -> Dict[str, Any]:
+    """Ingests and validates Razorpay webhooks using HMAC-SHA256 signature verification."""
+    raw_body = await request.body()
+    
+    # 1. Verify HMAC-SHA256 signature
+    if not _webhook_handler.verify_signature(raw_body, x_razorpay_signature):
+        raise HTTPException(status_code=400, detail="Invalid or missing Razorpay webhook signature")
+    
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    
+    event_id = payload.get("event_id") or payload.get("id") or f"wh_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+    
+    # 2. Check webhook idempotency
+    if _custom_repo.is_webhook_processed(event_id):
+        return {"status": "ignored_duplicate", "event_id": event_id, "message": "Webhook already processed"}
+    
+    event_type, entity_data, correlated_id = _webhook_handler.parse_event(payload)
+    
+    # 3. Correlate with case
+    target_case_id = correlated_id
+    if target_case_id and target_case_id in _cached_events:
+        evt = _cached_events[target_case_id]
+        
+        if event_type in ["payment.captured", "order.paid"]:
+            rec_amt = (entity_data.get("amount") or 0) / 100.0 if entity_data.get("amount") else evt.amount
+            if target_case_id in _cached_cases:
+                _cached_cases[target_case_id]["final_state"] = "RECOVERED"
+                _cached_cases[target_case_id]["recovered_amount"] = rec_amt
+                _cached_cases[target_case_id]["is_recovered"] = True
+                _cached_cases[target_case_id]["is_stopped"] = False
+            
+            # Record audit
+            audit = AuditRecord(
+                audit_id=f"aud_wh_{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+                workflow_id=f"wf_{target_case_id}",
+                case_id=target_case_id,
+                event_id=evt.event_id,
+                merchant_id=evt.merchant_id,
+                customer_id=evt.customer_id,
+                revenue_at_risk=evt.amount,
+                estimated_recoverable_amount=rec_amt,
+                failure_reason=evt.failure_reason,
+                failure_class=evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class),
+                selected_action="WEBHOOK_CAPTURED",
+                selection_reason=f"Asynchronous webhook confirmation: {event_type}",
+                policy_checks=["PASSED"],
+                policy_decision=PolicyDecision.APPROVED.value,
+                action_status="COMPLETED",
+                idempotency_key=f"wh_{event_id}",
+                outcome="RECOVERED",
+                recovered_amount=rec_amt,
+                from_state="ACTION_EXECUTED",
+                to_state="RECOVERED",
+            )
+            _audit_engine.audit_ledger.record_entry(audit)
+            
+            # Update Bayesian learning
+            fc = evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class)
+            strat = _cached_cases[target_case_id].get("selected_strategy", "RETRY_NOW") if target_case_id in _cached_cases else "RETRY_NOW"
+            _audit_engine.learning_engine.stats_store.record_outcome(
+                failure_class=fc,
+                strategy=strat,
+                expected_value=rec_amt,
+                actual_recovered_amount=rec_amt,
+                is_success=True,
+            )
+            
+            if _case_sources.get(target_case_id) == "CUSTOM":
+                _custom_repo.update_case_outcome(
+                    case_id=target_case_id,
+                    final_state="RECOVERED",
+                    recovered_amount=rec_amt,
+                    is_recovered=True,
+                    is_escalated=False,
+                    is_stopped=False,
+                    selected_strategy=strat,
+                    audit_trail=[r.model_dump() for r in _audit_engine.audit_ledger.get_records_for_case(target_case_id)],
+                )
+        
+        elif event_type == "payment.failed":
+            if target_case_id in _cached_cases:
+                _cached_cases[target_case_id]["final_state"] = "STOPPED"
+                _cached_cases[target_case_id]["is_recovered"] = False
+                _cached_cases[target_case_id]["is_stopped"] = True
+            
+            fc = evt.failure_class.value if hasattr(evt.failure_class, "value") else str(evt.failure_class)
+            strat = _cached_cases[target_case_id].get("selected_strategy", "RETRY_NOW") if target_case_id in _cached_cases else "RETRY_NOW"
+            _audit_engine.learning_engine.stats_store.record_outcome(
+                failure_class=fc,
+                strategy=strat,
+                expected_value=0.0,
+                actual_recovered_amount=0.0,
+                is_success=False,
+            )
+    
+    _custom_repo.record_processed_webhook(event_id, event_type, target_case_id, payload)
+    return {
+        "status": "processed",
+        "event_id": event_id,
+        "event_type": event_type,
+        "case_id": target_case_id,
     }
 
 
