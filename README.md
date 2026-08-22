@@ -1,16 +1,15 @@
 # RACE — Revenue Adaptive Control Engine
 
 [![RACE CI](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/Tests-80%20passing-emerald.svg)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-85%20passing-emerald.svg)](tests/)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
 [![Razorpay Test Mode](https://img.shields.io/badge/Razorpay-Test%20Mode%20Integrated-blueviolet.svg)](docs/RAZORPAY_INTEGRATION.md)
 [![License](https://img.shields.io/badge/License-MIT-slate.svg)](LICENSE)
 
 > **Autonomous Closed-Loop Revenue Recovery Decision Engine**  
 > **Track:** Track 03 — AI Revenue Recovery  
-> **Status:** Production-Ready / Fully Validated (80/80 Tests Passing)  
+> **Status:** Hackathon Release / Fully Validated (85/85 Tests Passing)  
 > **Repository:** [GitHub](https://github.com/Vaibhav20k/RACE--Revenue-Adaptive-Control-Engine)  
-> **Live Public Deployment:** [https://valuation-simon-receives-broad.trycloudflare.com](https://valuation-simon-receives-broad.trycloudflare.com)  
 > **Local Development Console:** `http://127.0.0.1:8000/`
 
 ---
@@ -25,7 +24,7 @@ Traditional payment recovery mechanisms rely on naive fixed-interval retry loops
 Revenue Event ──► Diagnosis ──► ERV Ranking ──► Policy Gate ──► Bounded Action ──► Ledger Verification ──► Bayesian Learning
 ```
 
-Across a frozen held-out validation suite of 200 transaction failure cases, RACE achieved an **83.50% recovery rate** (INR 1,680,352.07 recovered), delivering **+INR 1,181,402.94 (+236.8%) incremental revenue uplift** over industry-standard fixed retry policies, with **0 policy violations**, **0 duplicate charges**, and **100% audit completeness**.
+On the 200-case frozen held-out synthetic validation benchmark, RACE achieved a **92.99% revenue-weighted recovery rate** (matching the strongest rule-based baseline and substantially outperforming Baseline A's 27.61%), an **83.50% transaction-count recovery rate** (INR 1,680,352.07 recovered out of INR 1,807,104.53 at risk), and delivered **+INR 1,181,402.94 (+236.8%) incremental revenue uplift** over naive fixed retries with **0 policy violations**, **0 duplicate charges**, and **100% audit completeness**.
 
 ---
 
@@ -68,7 +67,7 @@ flowchart TD
 2. **Recoverability**: Filters hard declines (fraud, permanent stops) from recoverable opportunities.
 3. **Diagnose**: Synthesizes issuer decline codes, gateway switch health, and customer history.
 4. **Candidate Generation**: Spawns admissible strategies (`RETRY_NOW`, `RETRY_LATER`, `REMINDER_THEN_RETRY`, `HUMAN_ESCALATION`, `STOP`).
-5. **ERV Optimization**: Ranks strategies by net monetary recovery minus marginal costs and friction.
+5. **ERV Optimization**: Ranks strategies by net monetary recovery minus marginal costs, friction, and downside risk.
 6. **Safety Gate**: Deterministically validates retry caps ($\le 3$), amount thresholds ($\le 50\text{K}$), cooldowns, and opt-outs.
 7. **Bounded Execution**: Dispatches test-mode action locked with a deterministic SHA-256 idempotency key.
 8. **Outcome Verification**: Queries authoritative gateway ledger to verify definitive settlement.
@@ -98,14 +97,14 @@ If $\max_{a} \text{ERV}(a) \le 0$, the engine halts automated attempts (`STOP`) 
 
 ---
 
-## First-Class Safety: AI Proposes, Deterministic Policy Authorizes
+## First-Class Safety: Engine Proposes, Deterministic Policy Authorizes
 
-RACE enforces a strict architectural boundary: **Machine learning and AI models propose decisions, but only deterministic software gates can authorize execution.**
+RACE enforces a strict architectural boundary: **RACE's decision engine proposes recovery actions using recoverability estimation, ERV optimization, contextual reasoning, and adaptive empirical/Bayesian statistics. Only deterministic policy controls can authorize execution.**
 
 ```mermaid
 flowchart LR
     subgraph Reasoning Layer
-        ML[ML & AI Diagnostic Engine] -->|Proposes Strategy + ERV| Prop[Proposed Action]
+        ML[Diagnostic & ERV Engine] -->|Proposes Strategy + ERV| Prop[Proposed Action]
     end
     
     subgraph Policy Layer
@@ -188,6 +187,19 @@ Graceful Timeout Recovery:          100%
 
 ---
 
+## Razorpay Test Mode Integration
+
+RACE integrates directly with Razorpay's API in **Test Mode** to validate real external payment lifecycles:
+
+* **Authenticated API Execution**: Dispatches real server-side requests to Razorpay's Orders (`/v1/orders`) and Payment Links (`/v1/payment_links`) APIs using test keys (`rzp_test_...`).
+* **Authoritative Outcome Verification**: Queries the live payment status directly from Razorpay's gateway to verify settlement (`captured` vs `failed`/`unpaid`).
+* **Webhook Processing**: Receives and validates Razorpay webhooks (`payment.captured`, `payment.failed`, `order.paid`) using cryptographic HMAC-SHA256 signature verification.
+* **Resilient Mock Fallback**: In the absence of API credentials, the system automatically falls back to an offline deterministic mock adapter.
+
+> **Environment Disclosure**: RACE uses Razorpay Test Mode for integration validation; no live-money transactions are used. Credentials are read securely from environment variables and redacted in all logs.
+
+---
+
 ## User-Created Custom Test Scenarios
 
 RACE provides an interactive scenario injector enabling merchants to test arbitrary failure events:
@@ -198,7 +210,7 @@ RACE provides an interactive scenario injector enabling merchants to test arbitr
 
 ---
 
-## Quick Start & Verification
+## Quick Start & Local Verification
 
 ### 1. Prerequisites
 - Python 3.11+
@@ -221,22 +233,21 @@ python -m uvicorn backend.api.app:app --host 127.0.0.1 --port 8000
 
 ### 3. Running Automated Tests
 ```bash
-# Execute full 62-test verification suite
-python -m pytest
+# Execute full 85-test verification suite
+python -m pytest -v
 ```
 
 ---
 
-## Interactive Live Demo Walkthrough
+## Optional Live Demo & Walkthrough
 
-### Try Live Online (No Installation Required):
-Navigate to the deployed public environment:
-* **Live Console**: [https://valuation-simon-receives-broad.trycloudflare.com/](https://valuation-simon-receives-broad.trycloudflare.com/)
-* **Scientific Benchmarks**: [https://valuation-simon-receives-broad.trycloudflare.com/benchmarks](https://valuation-simon-receives-broad.trycloudflare.com/benchmarks)
-* **System Specification**: [https://valuation-simon-receives-broad.trycloudflare.com/about](https://valuation-simon-receives-broad.trycloudflare.com/about)
+> **Demo Tunnel Note**: The optional public link uses an ephemeral Cloudflare tunnel connected to the local RACE development server and is accessible only while the local service and tunnel are actively running. The authoritative submission and evaluation artifact is this GitHub repository.
+
+* **Optional Live Demo**: [https://valuation-simon-receives-broad.trycloudflare.com/](https://valuation-simon-receives-broad.trycloudflare.com/)
+* **Local Development Console**: `http://127.0.0.1:8000/`
 
 ### Step-by-Step Operator Journey:
-1. Open the **Live Console** in your browser.
+1. Open the console (`http://127.0.0.1:8000/`) in your browser.
 2. In the dark **TEST A SCENARIO** panel, select `case_0601` (Card Limit Deficit) or click **+ Add Custom Scenario** to inject a novel failure event.
 3. The **Payment Incident** card renders center-aligned with the gross amount and failure telemetry.
 4. Click **Investigate Case**:
@@ -250,35 +261,35 @@ Navigate to the deployed public environment:
 
 ---
 
-## Continuous Integration & Production Deployment
+## Continuous Integration & Container Verification
 
 RACE enforces automated verification on every pull request and push to `main` via GitHub Actions (`.github/workflows/ci.yml`).
 
 ```mermaid
 flowchart LR
     A[Git Push / PR] --> B[Static Compilation Check]
-    B --> C[Pytest 62 Test Suite]
+    B --> C[Pytest 85 Test Suite]
     C --> D[Scientific Benchmark Reproducibility]
     D --> E[Docker Build & Health Probe Check]
-    E --> F[Production Release Ready]
+    E --> F[Release Validation Ready]
 ```
 
 ### 1. Automated CI Pipeline Stages
 * **Static Verification**: `python -m compileall` across all engine modules.
-* **Test Suite Execution**: Full 62-test verification across matrix Python 3.11 & 3.12.
+* **Test Suite Execution**: Full 85-test verification across matrix Python 3.11 & 3.12.
 * **Benchmark Validation**: Executes `evaluation/run_benchmark.py --split validation` to verify zero drift in recovery rates.
 * **Container Health Verification**: Builds the multi-stage `Dockerfile` and executes health probes against `http://localhost:8000/health`.
 
 ### 2. Containerized Deployment (Docker & Compose)
 ```bash
-# Build and launch production container
+# Build and launch container
 docker compose up --build -d
 
 # Verify container health probe
 curl http://localhost:8000/health
 ```
 
-### 3. Production Health Probes
+### 3. Operational Health Probes
 * **Root Health Check**: `GET /health` — Returns service status, version, and UTC timestamp.
 * **API Health Check**: `GET /api/v1/health` — Returns REST router operational state.
 
