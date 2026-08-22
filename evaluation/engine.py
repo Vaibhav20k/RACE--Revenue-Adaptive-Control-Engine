@@ -142,6 +142,9 @@ class RACEEvaluationEngine:
             return {
                 "case_id": case.case_id,
                 "final_state": case.current_state.value,
+                "selected_strategy": selected_strat.value,
+                "policy_decision": policy_res.decision.value,
+                "policy_reason": policy_res.rationale,
                 "recovered_amount": 0.0,
                 "interventions": 0,
                 "total_cost": 0.0,
@@ -188,6 +191,9 @@ class RACEEvaluationEngine:
             return {
                 "case_id": case.case_id,
                 "final_state": case.current_state.value,
+                "selected_strategy": RecoveryStrategy.HUMAN_ESCALATION.value,
+                "policy_decision": PolicyDecision.ESCALATE_REQUIRED.value,
+                "policy_reason": policy_res.rationale,
                 "recovered_amount": rec_amt,
                 "interventions": 1,
                 "total_cost": 50.0,
@@ -264,6 +270,9 @@ class RACEEvaluationEngine:
         return {
             "case_id": case.case_id,
             "final_state": case.current_state.value,
+            "selected_strategy": selected_strat.value,
+            "policy_decision": PolicyDecision.APPROVED.value,
+            "policy_reason": policy_res.rationale,
             "recovered_amount": rec_amt,
             "interventions": interventions,
             "total_cost": total_cost,
