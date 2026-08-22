@@ -33,6 +33,21 @@ class RecoveryOutcomeVerifier:
         simulated_amount: Optional[float] = None,
     ) -> VerificationResult:
         """Verifies payment outcome against gateway or simulated environment."""
+        # Guard: STOP cases can never be verified as RECOVERED
+        strat = case.selected_strategy.value if hasattr(case.selected_strategy, "value") else str(case.selected_strategy)
+        if strat == "STOP" or case.current_state == CaseState.STOPPED:
+            case.actual_outcome = "STOPPED"
+            case.recovered_amount = 0.0
+            if case.current_state != CaseState.STOPPED:
+                RecoveryStateMachine.transition(case, CaseState.STOPPED, reason="Action STOP: no recovery action taken")
+            return VerificationResult(
+                case_id=case.case_id,
+                verified_state="STOPPED",
+                verified_amount_recovered=0.0,
+                is_fully_recovered=False,
+                reconciliation_notes="No recovery attempted: strategy is STOP.",
+            )
+
         # Step 1: Transition case to OUTCOME_OBSERVED
         if case.current_state == CaseState.ACTION_EXECUTED:
             RecoveryStateMachine.transition(case, CaseState.OUTCOME_OBSERVED, reason="Observing authoritative outcome")
@@ -40,14 +55,14 @@ class RecoveryOutcomeVerifier:
         # Step 2: Resolve status from simulated or API fetch
         if simulated_status is not None:
             status = simulated_status
-            amount = simulated_amount or (case.amount if status == "RECOVERED" else 0.0)
+            amount = simulated_amount if simulated_amount is not None else (case.amount if status == "RECOVERED" else 0.0)
         elif payment_id:
             try:
                 resp: RazorpayPaymentStatusResponse = self.client.fetch_payment(payment_id)
                 if resp.status == "captured":
                     status = "RECOVERED"
                     amount = resp.amount / 100.0
-                elif resp.status in ["created", "authorized"]:
+                elif resp.status in ["created", "authorized", "unpaid"]:
                     status = "PENDING"
                     amount = 0.0
                 else:
@@ -60,7 +75,12 @@ class RecoveryOutcomeVerifier:
             status = "FAILED"
             amount = 0.0
 
+        # Strict invariant: captured amount must be strictly positive and gateway state must be RECOVERED
         is_recovered = (status == "RECOVERED" and amount > 0.0)
+        if not is_recovered and status == "RECOVERED":
+            status = "FAILED"
+            amount = 0.0
+
         case.actual_outcome = status
         case.recovered_amount = amount
 

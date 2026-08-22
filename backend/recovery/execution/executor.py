@@ -37,21 +37,23 @@ class BoundedRecoveryExecutor:
         amount_paise = int(round(event.amount * 100))
 
         if strategy == RecoveryStrategy.STOP:
-            RecoveryStateMachine.transition(case, CaseState.STOPPED, reason="Action STOP executed")
+            if case.current_state != CaseState.STOPPED:
+                RecoveryStateMachine.transition(case, CaseState.STOPPED, reason="Action STOP: No recovery action authorized")
             return ExecutionResult(
-                success=True,
+                success=False,
                 status_code="STOPPED",
                 reference_id=None,
-                error_message=None,
+                error_message="Execution prohibited: selected strategy is STOP (no action taken)",
             )
 
         if strategy == RecoveryStrategy.HUMAN_ESCALATION:
-            RecoveryStateMachine.transition(case, CaseState.ESCALATED, reason="Human escalation workflow dispatched")
+            if case.current_state != CaseState.ESCALATED:
+                RecoveryStateMachine.transition(case, CaseState.ESCALATED, reason="Human escalation workflow dispatched")
             return ExecutionResult(
-                success=True,
+                success=False,
                 status_code="ESCALATED",
                 reference_id=f"esc_{case.case_id}",
-                error_message=None,
+                error_message="Execution deferred for manual human review",
             )
 
         # Transition to ACTION_EXECUTED

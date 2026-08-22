@@ -47,6 +47,18 @@ class PolicyGate:
                 rationale=f"Proposed action {proposed_action.value} requires human authorization: {amt_err}",
             )
 
+        # If proposed action itself is STOP or customer opted out
+        if proposed_action == RecoveryStrategy.STOP or event.customer_opted_out:
+            violations_list = ["Customer opted out of automated communications and retries."] if event.customer_opted_out else ["Strategy is non-intervention STOP."]
+            return PolicyEvaluationResult(
+                decision=PolicyDecision.BLOCKED,
+                is_allowed=False,
+                requires_human_approval=False,
+                violations=violations_list,
+                rule_name="POLICY_BLOCKED_STOP",
+                rationale="Recovery execution prohibited: Customer opted out or strategy is STOP (no action authorized).",
+            )
+
         # If any hard violations exist
         if violations:
             return PolicyEvaluationResult(

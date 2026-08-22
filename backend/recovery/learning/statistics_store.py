@@ -31,9 +31,29 @@ class StrategyPerformanceBucket(BaseModel):
 class StrategyStatisticsStore:
     """In-memory and persistent storage for empirical recovery outcomes."""
 
-    def __init__(self):
+    def __init__(self, repository: Optional[Any] = None):
         # Key: (failure_class, strategy_name) -> StrategyPerformanceBucket
         self._store: Dict[Tuple[str, str], StrategyPerformanceBucket] = {}
+        self.repository = repository
+        self._rehydrate_from_db()
+
+    def _rehydrate_from_db(self) -> None:
+        """Loads persistent buckets from SQLite database if repository is configured."""
+        if self.repository is not None and hasattr(self.repository, "load_all_learning_buckets"):
+            try:
+                records = self.repository.load_all_learning_buckets()
+                for r in records:
+                    key = (r["failure_class"].upper(), r["strategy"].upper())
+                    self._store[key] = StrategyPerformanceBucket(
+                        failure_class=r["failure_class"].upper(),
+                        strategy=r["strategy"].upper(),
+                        sample_count=r["sample_count"],
+                        success_count=r["success_count"],
+                        total_recovered_amount=r["total_recovered_amount"],
+                        total_expected_value=r["total_expected_value"],
+                    )
+            except Exception:
+                pass
 
     def record_outcome(
         self,
@@ -42,8 +62,12 @@ class StrategyStatisticsStore:
         expected_value: float,
         actual_recovered_amount: float,
         is_success: bool,
-    ) -> StrategyPerformanceBucket:
+    ) -> Optional[StrategyPerformanceBucket]:
         """Records an observed intervention outcome and updates aggregate statistics."""
+        # Defense in depth: STOP is not an intervention and must never be tracked in learning statistics
+        if strategy.upper() == "STOP":
+            return None
+
         key = (failure_class.upper(), strategy.upper())
         if key not in self._store:
             self._store[key] = StrategyPerformanceBucket(
@@ -57,6 +81,21 @@ class StrategyStatisticsStore:
             bucket.success_count += 1
             bucket.total_recovered_amount += actual_recovered_amount
         bucket.total_expected_value += expected_value
+
+        # Persist to database if repository is configured
+        if self.repository is not None and hasattr(self.repository, "save_learning_bucket"):
+            try:
+                self.repository.save_learning_bucket(
+                    failure_class=bucket.failure_class,
+                    strategy=bucket.strategy,
+                    sample_count=bucket.sample_count,
+                    success_count=bucket.success_count,
+                    total_recovered=bucket.total_recovered_amount,
+                    total_expected=bucket.total_expected_value,
+                )
+            except Exception:
+                pass
+
         return bucket
 
     def get_empirical_rate(self, failure_class: str, strategy: str, default: float = 0.5) -> float:
