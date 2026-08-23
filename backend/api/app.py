@@ -186,12 +186,28 @@ def get_merchant_console():
         .kpi-card {
             transition: opacity 0.4s ease, transform 0.4s ease;
         }
+
+        /* Glassmorphic Navigation Bar */
+        .glass-nav {
+            background-color: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+        }
+        .dark .glass-nav {
+            background-color: rgba(11, 15, 23, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(30, 43, 62, 0.8);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+        }
     </style>
 </head>
 <body class="bg-white dark:bg-[#0B0F17] text-slate-900 dark:text-slate-100 antialiased min-h-screen">
 
-    <!-- TOP NAVIGATION BAR -->
-    <header class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B0F17] sticky top-0 z-40 transition-colors">
+    <!-- TOP NAVIGATION BAR (FIXED / STICKY WITH GLASSMORPHISM) -->
+    <header class="glass-nav sticky top-0 z-50 transition-all">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-4">
                 <a href="/" class="flex items-center space-x-2.5">
@@ -1784,12 +1800,28 @@ def get_benchmarks_page():
             display: inline-flex;
             align-items: center;
         }
+
+        /* Glassmorphic Navigation Bar */
+        .glass-nav {
+            background-color: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+        }
+        .dark .glass-nav {
+            background-color: rgba(11, 15, 23, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(30, 43, 62, 0.8);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+        }
     </style>
 </head>
 <body class="bg-white dark:bg-[#0B0F17] text-slate-900 dark:text-slate-100 min-h-screen">
 
-    <!-- TOP NAVIGATION -->
-    <header class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B0F17] sticky top-0 z-40 transition-colors">
+    <!-- TOP NAVIGATION (FIXED / STICKY WITH GLASSMORPHISM) -->
+    <header class="glass-nav sticky top-0 z-50 transition-all">
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
                 <a href="/" class="flex items-center space-x-2">
@@ -2152,12 +2184,28 @@ def get_about_page():
             display: inline-flex;
             align-items: center;
         }
+
+        /* Glassmorphic Navigation Bar */
+        .glass-nav {
+            background-color: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+        }
+        .dark .glass-nav {
+            background-color: rgba(11, 15, 23, 0.75);
+            backdrop-filter: blur(16px) saturate(180%);
+            -webkit-backdrop-filter: blur(16px) saturate(180%);
+            border-bottom: 1px solid rgba(30, 43, 62, 0.8);
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+        }
     </style>
 </head>
 <body class="bg-white dark:bg-[#0B0F17] text-slate-900 dark:text-slate-100 min-h-screen">
 
-    <!-- TOP NAVIGATION -->
-    <header class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0B0F17] sticky top-0 z-40 transition-colors">
+    <!-- TOP NAVIGATION (FIXED / STICKY WITH GLASSMORPHISM) -->
+    <header class="glass-nav sticky top-0 z-50 transition-all">
         <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
                 <a href="/" class="flex items-center space-x-2">
